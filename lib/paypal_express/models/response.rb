@@ -77,6 +77,23 @@ module Killbill #:nodoc:
         response.nil? ? nil : response.payment_processor_account_id
       end
 
+      def self.update_response_for_pending_payment(transaction_plugin_info)
+        response = where(:api_call => 'build_form_descriptor',
+                         :kb_payment_id => transaction_plugin_info.kb_payment_id,
+                         :kb_transaction_id => transaction_plugin_info.kb_transaction_payment_id).last
+        return nil if response.nil?
+        response.update_pending_to_cancel
+      end
+
+      def update_pending_to_cancel
+        updated_attributes = {
+            :success => false,
+            :updated_at => Time.now.utc,
+            :message => { :payment_plugin_status => :CANCELED, :exception_message => 'Token expired. Payment Cancelled by Janitor' }.to_json
+        }
+        update!(updated_attributes)
+      end
+
       def to_transaction_info_plugin(transaction=nil)
         t_info_plugin = super(transaction)
 
