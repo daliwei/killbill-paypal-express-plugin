@@ -243,7 +243,6 @@ Below is a list of optional parameters for build_form_descriptor call. More deta
 | callback_timeout             | An override for you to request more or less time to be able to process the callback request and respond. |
 | allow_buyer_optin            | Enables the buyer to provide their email address on the PayPal pages to be notified of promotions or special events. |
 | shipping_address             | Address to which the order is shipped. This parameter must be a JSON Hash with keys of `name`, `address1`, `address2`, `state`, `city`, `country`, `phone`, `zip` and `phone`. |
-| address                      | Address to which the order is shipped if shipping_address is not set. This parameter must be a JSON Hash with keys of `name`, `address1`, `address2`, `state`, `city`, `country`, `phone`, `zip` and `phone`. |
 | total_type                   | Type declaration for the label to be displayed in MiniCart for UX. It is one of the following values: Total or EstimatedTotal. |
 | funding_sources              | This parameter must be in a JSON hash format with a key being `source`. This element could be used to specify the preferred funding option for a guest user. However, the `landing_page` element must also be set to `Billing`. Otherwise, it is ignored.|
 | shipping_options             | This parameter must be in a JSON hash format with keys of `default`, `amount`, and `name`. This corresponds to the `ShippingOptionsType` in the SetupExpressCheckout call. |
@@ -257,6 +256,79 @@ Below is a list of optional parameters for build_form_descriptor call. More deta
 | description                  | Description of items the buyer is purchasing.                      |
 | custom                       | A free-form field for your own use.                                |
 | order_id                     | Your own invoice or tracking number.                               |
-| invoice_id                   | Your own invoice or tracking number. This will be overridden by order_id. |
 | notify_url                   | Your URL for receiving Instant Payment Notification (IPN) about this transaction. If you do not specify this value in the request, the notification URL from your Merchant Profile is used, if one exists.|
 | items                        | This parameter must be a JSON Array that contains a list of Hashes with keys of `name`, `number`, `quantity`, `amount`, `description`, `url` and `category`. |
+
+Below is a list of optional parameters for authorize/purchase call. More details can be found on PayPal [manual](https://developer.paypal.com/docs/classic/api/merchant/DoExpressCheckoutPayment_API_Operation_SOAP/)
+
+| Key                          | Description                                                        |
+| ---------------------------: | -------------------------------------------------------------------|
+| subtotal                     | Sum of cost of all items in this order. For digital goods, this field is required. |
+| shipping                     | Total shipping costs for this order.                               |
+| handling                     | Total handling costs for this order.                               |
+| tax                          | Sum of tax for all items in this order.                            |
+| insurance_total              | Total shipping insurance costs for this order. The value must be a non-negative currency amount or null if you offer insurance options. |
+| shipping_discount            | Shipping discount for this order, specified as a negative number.  |
+| insurance_option_offered     | Indicates whether insurance is available as an option the buyer can choose on the PayPal Review page. |
+| description                  | Description of items the buyer is purchasing. By default, plugin will set it to "Kill Bill `authorize` or `purchase` for `kb_payment_transaction_id`                     |
+| custom                       | A free-form field for your own use.                                |
+| order_id                     | Your own invoice or tracking number. By default, the plugin will use Kill Bill transaction Id. If `external_key_as_order_id` is set, the plugin will use transaction external key. |
+| notify_url                   | Your URL for receiving Instant Payment Notification (IPN) about this transaction. If you do not specify this value in the request, the notification URL from your Merchant Profile is used, if one exists.|
+| items                        | This parameter must be a JSON Array that contains a list of Hashes with keys of `name`, `number`, `quantity`, `amount`, `description`, `url` and `category`. |
+| shipping_address             | Address to which the order is shipped. This parameter must be a JSON Hash with keys of `name`, `address1`, `address2`, `state`, `city`, `country`, `phone`, `zip` and `phone`. |
+| express_request              | Indicate if this is an express_request. The following options are activated only if this parameter is set to true. |
+| note_text                    | Note to the merchant.                                              |
+| payment_action               | This is the payment action belong to payment details.              |
+| transaction_id               | Transaction identification number of the transaction that was created.|
+| allowed_payment_method_type  | The payment method type.                                           |
+| payment_request_id           | A unique identifier of the specific payment request. Required when implementing parallel payments.|
+
+Below is a list of optional parameters for authorize/purchase call with BAID. More details can be found on PayPal [manual](https://developer.paypal.com/docs/classic/api/merchant/DoReferenceTransaction_API_Operation_NVP/)
+
+| Key                          | Description                                                        |
+| ---------------------------: | -------------------------------------------------------------------|
+| ip_address                   | IP address of the buyer's browser. (The plugin will set this parameter automatically if the client does not pass in this parameter)|
+| req_confirm_shipping         | Whether you require that the buyer's shipping address on file with PayPal be a confirmed address.|
+| merchant_session_id          | Your buyer session identification token. |
+| return_f_m_f_details         | Flag to indicate whether you want the results returned by Fraud Management Filters. By default, you do not receive this information.|
+| soft_descriptor              | Information that is usually displayed in the account holder's statement. |
+| subtotal                     | Sum of cost of all items in this order. For digital goods, this field is required. |
+| shipping                     | Total shipping costs for this order.                               |
+| handling                     | Total handling costs for this order.                               |
+| tax                          | Sum of tax for all items in this order.                            |
+| insurance_total              | Total shipping insurance costs for this order. The value must be a non-negative currency amount or null if you offer insurance options. |
+| shipping_discount            | Shipping discount for this order, specified as a negative number.  |
+| insurance_option_offered     | Indicates whether insurance is available as an option the buyer can choose on the PayPal Review page. |
+| description                  | Description of items the buyer is purchasing. By default, plugin will set it to "Kill Bill `authorize` or `purchase` for `kb_payment_transaction_id`.|
+| custom                       | A free-form field for your own use.                                |
+| order_id                     | Your own invoice or tracking number. By default, the plugin will use Kill Bill transaction Id. If `external_key_as_order_id` is set, the plugin will use transaction external key. |
+| notify_url                   | Your URL for receiving Instant Payment Notification (IPN) about this transaction. If you do not specify this value in the request, the notification URL from your Merchant Profile is used, if one exists.|
+| items                        | This parameter must be a JSON Array that contains a list of Hashes with keys of `name`, `number`, `quantity`, `amount`, `description`, `url` and `category`. |
+| shipping_address             | Address to which the order is shipped. This parameter must be a JSON Hash with keys of `name`, `address1`, `address2`, `state`, `city`, `country`, `phone`, `zip` and `phone`. |
+| express_request              | Indicate if this is an express_request. The following options are activated only if this parameter is set to true. |
+| note_text                    | Note to the merchant.                                              |
+| payment_action               | This is the payment action belong to payment details.              |
+| transaction_id               | Transaction identification number of the transaction that was created.|
+| allowed_payment_method_type  | The payment method type.                                           |
+| payment_request_id           | A unique identifier of the specific payment request. Required when implementing parallel payments.|
+
+Below is a list of optional parameters for refund call. More details can be found on PayPal [manual](https://developer.paypal.com/docs/classic/api/merchant/RefundTransaction_API_Operation_SOAP/?mark=RefundType)
+
+| Key                          | Description                                                        |
+| ---------------------------: | -------------------------------------------------------------------|
+| refund_type                  | Type of refund you are making. It is one of the following values:Full, Partial, ExternalDispute, Other. If this value is not set, the plugin will specify it as [Partial](https://github.com/activemerchant/active_merchant/blob/b1c5c11812a2284a2a9c566e5efd34064006040b/lib/active_merchant/billing/gateways/paypal/paypal_common_api.rb#L336). |
+| note                         | Custom memo about the refund.                                      |
+
+Below is a list of optional parameters for capture call. More details can be found on PayPal [manual](https://developer.paypal.com/docs/classic/api/merchant/DoCapture_API_Operation_SOAP/)
+
+| Key                          | Description                                                        |
+| ---------------------------: | -------------------------------------------------------------------|
+| complete_type                | Indicates whether or not this is your last capture. It is one of the following values: Complete and NotComplete. By default, the plugin sets it to NotComplete |
+| order_id                     | Your invoice number or other identification number that is displayed to you and to the buyer in their transaction history. By default, the plugin will use Kill Bill transaction Id. If `external_key_as_order_id` is set, the plugin will use transaction external key. |
+| description                  | An informational note about this settlement that is displayed to the buyer in email and in their transaction history. By default, plugin will set it to "Kill Bill `authorize` or `purchase` for `kb_payment_transaction_id` |
+
+Below is a list of optional parameters for void call. More details can be found on PayPal [manual](https://developer.paypal.com/docs/classic/api/merchant/DoVoid_API_Operation_NVP/?mark=void)
+
+| Key                          | Description                                                        |
+| ---------------------------: | -------------------------------------------------------------------|
+| description                  | An informational note about this settlement that is displayed to the buyer in email and in their transaction history. By default, plugin will set it to "Kill Bill `authorize` or `purchase` for `kb_payment_transaction_id`. |                               

@@ -35,15 +35,13 @@ module Killbill #:nodoc:
       end
 
       def capture_payment(kb_account_id, kb_payment_id, kb_payment_transaction_id, kb_payment_method_id, amount, currency, properties, context)
+        options = {}
         # Pass extra parameters for the gateway here
-        options = {
-            # NotComplete to allow for partial captures.
-            # If Complete, any remaining amount of the original authorized transaction is automatically voided and all remaining open authorizations are voided.
-            :complete_type => 'NotComplete'
-        }
-
-        properties = merge_properties(properties, options)
-        super(kb_account_id, kb_payment_id, kb_payment_transaction_id, kb_payment_method_id, amount, currency, properties, context)
+        add_optional_params_for_capture options, properties_to_hash(properties)
+        # NotComplete to allow for partial captures.
+        # If Complete, any remaining amount of the original authorized transaction is automatically voided and all remaining open authorizations are voided.
+        options[:complete_type] ||= 'NotComplete'
+        super(kb_account_id, kb_payment_id, kb_payment_transaction_id, kb_payment_method_id, amount, currency, hash_to_properties(options), context)
       end
 
       def purchase_payment(kb_account_id, kb_payment_id, kb_payment_transaction_id, kb_payment_method_id, amount, currency, properties, context)
@@ -52,14 +50,11 @@ module Killbill #:nodoc:
       end
 
       def void_payment(kb_account_id, kb_payment_id, kb_payment_transaction_id, kb_payment_method_id, properties, context)
+        options = {}
         # Pass extra parameters for the gateway here
-        options = {
-            # Void the original authorization
-            :linked_transaction_type => :authorize
-        }
-
-        properties = merge_properties(properties, options)
-        super(kb_account_id, kb_payment_id, kb_payment_transaction_id, kb_payment_method_id, properties, context)
+        add_optional_params_for_void options, properties_to_hash(properties)
+        options[:linked_transaction_type] ||= :authorize
+        super(kb_account_id, kb_payment_id, kb_payment_transaction_id, kb_payment_method_id, hash_to_properties(options), context)
       end
 
       def credit_payment(kb_account_id, kb_payment_id, kb_payment_transaction_id, kb_payment_method_id, amount, currency, properties, context)
@@ -71,16 +66,14 @@ module Killbill #:nodoc:
       end
 
       def refund_payment(kb_account_id, kb_payment_id, kb_payment_transaction_id, kb_payment_method_id, amount, currency, properties, context)
+        options = {}
+        # Pass extra parameters for the gateway here
+        add_optional_params_for_refund options, properties_to_hash(properties)
+
         # Cannot refund based on authorizations (default behavior)
         linked_transaction_type = @transaction_model.purchases_from_kb_payment_id(kb_payment_id, context.tenant_id).size > 0 ? :PURCHASE : :CAPTURE
-
-        # Pass extra parameters for the gateway here
-        options = {
-            :linked_transaction_type => linked_transaction_type
-        }
-
-        properties = merge_properties(properties, options)
-        super(kb_account_id, kb_payment_id, kb_payment_transaction_id, kb_payment_method_id, amount, currency, properties, context)
+        options[:linked_transaction_type] ||= linked_transaction_type
+        super(kb_account_id, kb_payment_id, kb_payment_transaction_id, kb_payment_method_id, amount, currency, hash_to_properties(options), context)
       end
 
       def get_payment_info(kb_account_id, kb_payment_id, properties, context)
@@ -296,14 +289,21 @@ module Killbill #:nodoc:
         response.payer_id
       end
 
-      def add_required_options(kb_payment_transaction_id, kb_payment_method_id, context, options)
-        payment_method = @payment_method_model.from_kb_payment_method_id(kb_payment_method_id, context.tenant_id)
+      def is_token_present(payment_method)
+        payment_method.paypal_express_token.presence
+      end
 
+      def add_required_options_for_baid(kb_payment_transaction_id, payment_method, options)
         options[:payer_id]     ||= payment_method.paypal_express_payer_id.presence
         options[:token]        ||= payment_method.paypal_express_token.presence
-        options[:reference_id] ||= payment_method.token.presence # baid
 
+        # There is one more required option: description, but that will be taken care of in the plugin framework
+        options[:reference_id] ||= payment_method.token.presence # baid
         options[:payment_type] ||= 'Any'
+
+        # Note that although this invoice_id is required in ActiveMerchant DoReferenceTransaction call
+        # but when ActiveMerchant actually uses it, the order_id takes precedence over invoice_id.
+        # Since order_id is always set in the plugin framework, setting invoice_id here is only to satisfy ActiveMerchant requirement
         options[:invoice_id]   ||= kb_payment_transaction_id
         options[:ip]           ||= @ip
       end
@@ -318,7 +318,7 @@ module Killbill #:nodoc:
         options[:cancel_return_url] = ::Killbill::Plugin::ActiveMerchant::Utils.normalized(properties_hash, :cancel_return_url)
         options[:payment_processor_account_id] = ::Killbill::Plugin::ActiveMerchant::Utils.normalized(properties_hash, :payment_processor_account_id)
 
-        add_optional_parameters options, properties_hash, currency
+        add_optional_params_for_initial_call options, properties_hash, currency
 
         amount_in_cents = amount.nil? ? nil : to_cents(amount, currency)
         response = @private_api.initiate_express_checkout(kb_account_id,
@@ -362,11 +362,14 @@ module Killbill #:nodoc:
           transaction.currency = currency
           transaction
         else
+          payment_method = @payment_method_model.from_kb_payment_method_id(kb_payment_method_id, context.tenant_id)
           options = {}
-          add_required_options(kb_payment_transaction_id, kb_payment_method_id, context, options)
-
           # We have a baid on file
-          if options[:token]
+          if is_token_present payment_method
+            # Add optional parameters to baid auth or purchase call
+            add_optional_params_for_baid_auth_purchase options, properties_hash, currency
+            # Add require params
+            add_required_options_for_baid kb_payment_transaction_id, payment_method, options
             if is_authorize
               gateway_call_proc = Proc.new do |gateway, linked_transaction, payment_source, amount_in_cents, options|
                 # Can't use default implementation: the purchase signature is for one-off payments only
@@ -379,6 +382,8 @@ module Killbill #:nodoc:
               end
             end
           else
+            # Add optional parameters to one-time auth or purchase call
+            add_optional_params_for_auth_purchase options, properties_hash, currency
             # One-off payment
             options[:token] = ::Killbill::Plugin::ActiveMerchant::Utils.normalized(properties_hash, :token) || find_last_token(kb_account_id, context.tenant_id)
             if is_authorize
@@ -420,8 +425,7 @@ module Killbill #:nodoc:
             return response.to_transaction_info_plugin(nil)
           end
 
-          properties = merge_properties(properties, options)
-          dispatch_to_gateways(api_call_type, kb_account_id, kb_payment_id, kb_payment_transaction_id, kb_payment_method_id, amount, currency, properties, context, gateway_call_proc, nil, {:payer_id => options[:payer_id]})
+          dispatch_to_gateways(api_call_type, kb_account_id, kb_payment_id, kb_payment_transaction_id, kb_payment_method_id, amount, currency, hash_to_properties(options), context, gateway_call_proc, nil, {:payer_id => options[:payer_id]})
         end
       end
 
@@ -446,53 +450,83 @@ module Killbill #:nodoc:
         @response_model.cancel_pending_payment transaction_plugin_info
       end
 
-      def add_optional_parameters(options, properties_hash, currency)
-        [:max_amount,
-         :req_billing_address,
-         :no_shipping,
-         :address_override,
-         :locale,
-         :brand_name,
-         :page_style,
-         :logo_image,
-         :header_image,
-         :header_border_color,
-         :header_background_color,
-         :background_color,
-         :allow_guest_checkout,
-         :landing_page,
-         :email,
-         :allow_note,
-         :callback_url,
-         :callback_timeout,
-         :allow_buyer_optin,
-         :callback_version,
-         :address,
-         :shipping_address,
-         :total_type,
-         :funding_sources,
-         :shipping_options,
-         # Below are options for payment details
-         :subtotal,
-         :shipping,
-         :handling,
-         :tax,
-         :insurance_total,
-         :shipping_discount,
-         :insurance_option_offered,
-         :description,
-         :custom,
-         :order_id,
-         :invoice_id,
-         :notify_url,
-         :items].each do |sym|
-           option_val = ::Killbill::Plugin::ActiveMerchant::Utils.normalized(properties_hash, sym)
-           options[sym] = option_val unless option_val.nil?
-        end
+      def add_optional_params_for_refund(options, properties_hash)
+        normalize_array [:refund_type, :note], options, properties_hash
+      end
+
+      def add_optional_params_for_void(options, properties_hash)
+        normalize_array [:description], options, properties_hash
+      end
+
+      def add_optional_params_for_baid_auth_purchase(options, properties_hash, currency)
+        normalize_array [:ip_address, :req_confirm_shipping, :merchant_session_id, :return_f_m_f_details, :soft_descriptor], options, properties_hash
+        add_payment_details options, properties_hash, currency
+      end
+
+      def add_optional_params_for_auth_purchase(options, properties_hash, currency)
+        add_payment_details options, properties_hash, currency
+      end
+
+      def add_optional_params_for_capture(options, properties_hash)
+        # In active_merchant, the order_id is used as the invoice_id for DoCapture call
+        normalize_array [:complete_type, :order_id, :description], options, properties_hash
+      end
+
+      def add_optional_params_for_initial_call(options, properties_hash, currency)
+        normalize_array [:max_amount,
+                         :req_billing_address,
+                         :no_shipping,
+                         :address_override,
+                         :locale,
+                         :brand_name,
+                         :page_style,
+                         :logo_image,
+                         :header_image,
+                         :header_border_color,
+                         :header_background_color,
+                         :background_color,
+                         :allow_guest_checkout,
+                         :landing_page,
+                         :email,
+                         :allow_note,
+                         :callback_url,
+                         :callback_timeout,
+                         :allow_buyer_optin,
+                         :callback_version,
+                         :shipping_address,
+                         :total_type,
+                         :funding_sources,
+                         :shipping_options], options, properties_hash
+
+        add_payment_details options, properties_hash, currency
+
+        options[:max_amount] = to_cents((options[:max_amount] || '0').to_f, currency) unless options[:max_amount].nil?
+        # Parse JSON based options including funding_source, items, shipping_options, address and shipping_address
+        parse_json_options [:funding_sources, :shipping_options], options
+        # Filter the options that has second level options including funding_source, shipping_options
+        options[:funding_sources] = filter_hash_options options[:funding_sources], [:source] unless options[:funding_sources].nil?
+        options[:shipping_options] = filter_array_options options[:shipping_options], [:default, :amount, :name], [:amount], currency unless options[:shipping_options].nil?
+      end
+
+      def add_payment_details(options, properties_hash, currency)
+        normalize_array [:subtotal,
+                         :shipping,
+                         :handling,
+                         :tax,
+                         :insurance_total,
+                         :shipping_discount,
+                         :insurance_option_offered,
+                         :description,
+                         :custom,
+                         :order_id,
+                         :notify_url,
+                         :shipping_address,
+                         :items,
+                         :express_request
+                        ], options, properties_hash
 
         # Special consideration for amount related options
-        [:max_amount,
-         :subtotal,
+        [:subtotal,
          :shipping,
          :handling,
          :tax,
@@ -502,9 +536,14 @@ module Killbill #:nodoc:
             options[sym] = to_cents((options[sym] || '0').to_f, currency)
           end
         end
+        normalize_array [:note_text, :payment_action, :transaction_id, :allowed_payment_method_type, :payment_request_id], options, properties_hash if options[:express_request]
+        parse_json_options [:shipping_address, :items], options
+        options[:shipping_address] = filter_hash_options options[:shipping_address], [:name, :address1, :address2, :city, :state, :country, :phone, :zip] unless options[:shipping_address].nil?
+        options[:items] = filter_array_options options[:items], [:name, :number, :quantity, :amount, :description, :url, :category], [:amount], currency unless options[:items].nil?
+      end
 
-        # Parse JSON based options including funding_source, items, shipping_options, address and shipping_address
-        [:funding_sources, :shipping_options, :items, :shipping_address, :address].each do |sym|
+      def parse_json_options(keys, options)
+        keys.each do |sym|
           begin
             options[sym] = JSON.parse options[sym] unless options[sym].nil?
           rescue => e
@@ -512,14 +551,14 @@ module Killbill #:nodoc:
             options[sym] = nil
           end
         end
+      end
 
-        # Filter the options that has second level options including funding_source, items, shipping_options, address and shipping_address
-        [:shipping_address, :address].each do |key|
-          options[key] = filter_hash_options options[key], [:name, :address1, :address2, :city, :state, :country, :phone, :zip] unless options[key].nil?
+      def normalize_array(keys, options, properties_hash)
+        return if options.nil? || !options.is_a?(Hash) || keys.nil? || !keys.is_a?(Array) || properties_hash.nil? || !properties_hash.is_a?(Hash)
+        keys.each do |sym|
+          option_val = ::Killbill::Plugin::ActiveMerchant::Utils.normalized(properties_hash, sym)
+          options[sym] = option_val unless option_val.nil?
         end
-        options[:funding_sources] = filter_hash_options options[:funding_sources], [:source] unless options[:funding_sources].nil?
-        options[:shipping_options] = filter_array_options options[:shipping_options], [:default, :amount, :name], [:amount], currency unless options[:shipping_options].nil?
-        options[:items] = filter_array_options options[:items], [:name, :number, :quantity, :amount, :description, :url, :category], [:amount], currency unless options[:items].nil?
       end
 
       def filter_array_options(option, allowed_keys, amount_keys = [], currency = nil)
