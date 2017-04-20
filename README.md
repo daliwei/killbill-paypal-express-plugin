@@ -260,6 +260,7 @@ Below is a list of optional parameters for build_form_descriptor call. More deta
 | order_id                     | Your own invoice or tracking number.                               |
 | notify_url                   | Your URL for receiving Instant Payment Notification (IPN) about this transaction. If you do not specify this value in the request, the notification URL from your Merchant Profile is used, if one exists.|
 | items                        | This parameter must be a JSON Array that contains a list of Hashes with keys of `name`, `number`, `quantity`, `amount`, `description`, `url` and `category`. |
+<<<<<<< HEAD
 
 Below is a list of optional parameters for authorize/purchase call. More details can be found on PayPal [manual](https://developer.paypal.com/docs/classic/api/merchant/DoExpressCheckoutPayment_API_Operation_SOAP/)
 
@@ -334,3 +335,6 @@ Below is a list of optional parameters for void call. More details can be found 
 | Key                          | Description                                                        |
 | ---------------------------: | -------------------------------------------------------------------|
 | description                  | An informational note about this settlement that is displayed to the buyer in email and in their transaction history. By default, plugin will set it to "Kill Bill `authorize` or `purchase` for `kb_payment_transaction_id`. |                               
+=======
+| review                       | If false, checkout button is set to Pay now. |
+>>>>>>> 5cba1ee2a7da5ea125cf656ce39da09c0850f0d3
